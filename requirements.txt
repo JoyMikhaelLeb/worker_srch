@@ -1,0 +1,13 @@
+firebase_admin==5.0.2
+numpy==1.18.5
+selenium==3.141.0
+protobuf==3.19.1
+beautifulsoup4==4.9.3
+pandas==1.2.2
+pyperclip==1.8.2
+scrapy==2.4.1
+webdriver_manager==3.3.0
+google-cloud-pubsub==2.5.0
+google-cloud-firestore==2.1.0
+emoji ==1.7.0
+supabase == 2.6.0
