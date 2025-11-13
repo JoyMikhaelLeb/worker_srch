@@ -111,16 +111,31 @@ def clean_search_url(url):
 
 
 def build_position_url(base_url, position):
-    """Build search URL with position filter in URL parameters"""
+    """Build search URL with position filter in URL parameters
+
+    Format: ...&title=%22position%22&currentCompany=%5B%22numericalid%22%5D
+    Where %22 is the URL encoding for quotes (")
+    """
     from urllib.parse import quote
 
+    # Clean the base URL
     base_url = clean_search_url(base_url)
+
+    # Remove existing title parameters
     base_url = re.sub(r"&title=.*?(?=&|$)", "", base_url)
     base_url = re.sub(r"&titleFreeText=.*?(?=&|$)", "", base_url)
 
-    # URL encode the position to handle special characters
+    # Add origin=FACETED_SEARCH if not present
+    if 'origin=FACETED_SEARCH' not in base_url:
+        base_url += '&origin=FACETED_SEARCH'
+
+    # Build title parameter with quotes: title=%22position%22
+    # URL encode the position value itself
     encoded_position = quote(position)
-    position_url = f"{base_url}&titleFreeText={encoded_position}"
+    title_param = f"&title=%22{encoded_position}%22"
+
+    # Insert title parameter right after origin=FACETED_SEARCH
+    position_url = base_url.replace('origin=FACETED_SEARCH', f'origin=FACETED_SEARCH{title_param}')
 
     return position_url
 
@@ -128,7 +143,8 @@ def build_position_url(base_url, position):
 async def check_position_in_url(page):
     """Check if position filter is still present in current URL"""
     current_url = await page.evaluate('window.location.href')
-    if 'titleFreeText=' in current_url or '&title=' in current_url:
+    # Check for title parameter with quotes: title=%22...%22
+    if 'title=%22' in current_url or 'title="' in current_url:
         return True
     return False
 
@@ -719,7 +735,9 @@ async def collect_unique_profiles_across_positions(page, search_string, position
 
                 # Verify position filter is in URL
                 current_url = await page.evaluate('window.location.href')
-                if 'titleFreeText=' not in current_url and '&title=' not in current_url:
+                print(f"  🔍 Final URL: {current_url}")
+
+                if 'title=%22' not in current_url and 'title="' not in current_url:
                     print(f"  ⚠️  Position filter not in URL on attempt {position_attempt + 1}")
                     if position_attempt < max_position_retries - 1:
                         print(f"  🔄 Will retry this position...")
