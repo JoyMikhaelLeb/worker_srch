@@ -311,26 +311,46 @@ async def apply_position_filter(page, position, max_retries=3):
             print(f"🔧 Applying position filter via UI (FALLBACK) for: {position}")
 
         try:
+            # Wait for page to be fully loaded and interactive
+            await asyncio.sleep(2)
+
+            # Debug: Check current URL
+            current_url = await page.evaluate('window.location.href')
+            print(f"  🔍 Current URL: {current_url}")
+
+            # Debug: Check what buttons are available
+            available_buttons = await page.evaluate("""
+                () => {
+                    const buttons = Array.from(document.querySelectorAll('button'));
+                    return buttons.map(b => b.textContent.trim()).filter(t => t.length > 0 && t.length < 50);
+                }
+            """)
+            print(f"  🔍 Available buttons: {available_buttons[:10]}")  # Show first 10
+
             # Click All filters button
             all_filters_clicked = False
 
             try:
-                # Use JS to find and click All filters button
+                # Method 1: Use JS to find and click All filters button
                 all_filters_clicked = await page.evaluate("""
                     () => {
-                        const btn = Array.from(document.querySelectorAll('button'))
-                            .find(el => el.textContent.includes('All filters'));
-                        if (btn) {
-                            btn.click();
+                        const buttons = Array.from(document.querySelectorAll('button'));
+                        const allFiltersBtn = buttons.find(el =>
+                            el.textContent.includes('All filters') ||
+                            el.textContent.includes('Show all filters') ||
+                            el.getAttribute('aria-label')?.includes('all filters')
+                        );
+                        if (allFiltersBtn) {
+                            allFiltersBtn.click();
                             return true;
                         }
                         return false;
                     }
                 """)
                 if all_filters_clicked:
-                    await asyncio.sleep(0.8)
-            except:
-                pass
+                    await asyncio.sleep(1.0)
+            except Exception as e:
+                print(f"  ⚠️  Error clicking All filters: {e}")
 
             if not all_filters_clicked:
                 print(f"  ⚠️  Could not find 'All filters' button on attempt {retry_attempt + 1}")
