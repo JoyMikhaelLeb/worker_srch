@@ -6,7 +6,6 @@ Created on Sat Mar 12 16:46:48 2022
 @author: charb,Joy
 """
 import re
-from selenium.common.exceptions import NoSuchElementException,TimeoutException
 from save_website import extract_domain
 from time import sleep, time
 import signal
@@ -22,7 +21,7 @@ from advanced_search_ppl import sales_search
 from advanced_search_ppl import get_advanced_search_people_profile
 from advanced_search_companies import sales_company_search
 from advanced_search_companies import get_advanced_search_company_profile
-from downloadhtml import get_profile_sales_html 
+from downloadhtml import get_profile_sales_html
 #adv is based on the one will import now
 from advanced_profiles_html import advanced_search_people_profile_html
 from insights import get_25_months_employees
@@ -35,15 +34,14 @@ from firebase_admin import firestore
 import os
 from sn_employees_movements import get_sn_employees_movements
 import datetime
-from datetime import date 
+from datetime import date
 from datetime import datetime as datetime_class
 import sys
 import traceback
 import json
 
 from random import randint
-from selenium.webdriver.remote.remote_connection import LOGGER
-LOGGER.setLevel(logging.FATAL)
+# Removed selenium imports - now using nodriver
 from urllib3.connectionpool import log as urllibLogger
 urllibLogger.setLevel(logging.FATAL)
 
