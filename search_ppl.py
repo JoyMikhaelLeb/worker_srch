@@ -112,10 +112,16 @@ def clean_search_url(url):
 
 def build_position_url(base_url, position):
     """Build search URL with position filter in URL parameters"""
+    from urllib.parse import quote
+
     base_url = clean_search_url(base_url)
     base_url = re.sub(r"&title=.*?(?=&|$)", "", base_url)
     base_url = re.sub(r"&titleFreeText=.*?(?=&|$)", "", base_url)
-    position_url = f"{base_url}&titleFreeText={position}"
+
+    # URL encode the position to handle special characters
+    encoded_position = quote(position)
+    position_url = f"{base_url}&titleFreeText={encoded_position}"
+
     return position_url
 
 
@@ -677,21 +683,58 @@ async def collect_unique_profiles_across_positions(page, search_string, position
                 print(f"  🔄 Position retry {position_attempt + 1}/{max_position_retries} after {retry_wait}s...")
                 await asyncio.sleep(retry_wait)
 
-            # Navigate to clean search URL
-            cleaned_url = clean_search_url(search_string)
-            print(f"  🌐 Navigating to base search URL...")
-            await page.get(cleaned_url)
+            # Build URL with position filter included
+            position_url = build_position_url(search_string, position)
+            print(f"  🌐 Navigating to URL with position filter: {position}")
+            print(f"  🔗 {position_url}")
 
-            # Progressive wait (FASTER)
-            position_wait = 1 + (idx * 0.2)
-            await asyncio.sleep(position_wait)
+            try:
+                await page.get(position_url)
 
-            # Apply position filter via UI
-            print(f"  🔧 Applying UI filter for '{position}'...")
-            filter_result = await apply_position_filter(page, position, max_retries=5)
+                # Progressive wait (FASTER)
+                position_wait = 1.5 + (idx * 0.2)
+                await asyncio.sleep(position_wait)
 
-            if filter_result == "filter_failed" or filter_result == False:
-                print(f"  ❌ UI filter failed for '{position}' on attempt {position_attempt + 1}")
+                # Wait for page to load
+                page_load_result = await wait_for_page_load(page)
+
+                if page_load_result == "no_results_container":
+                    print(f"  ⚠️  No results container loaded on attempt {position_attempt + 1}")
+                    if position_attempt < max_position_retries - 1:
+                        print(f"  🔄 Will retry this position...")
+                        continue
+                    else:
+                        print(f"  ❌ Position '{position}' failed after {max_position_retries} attempts")
+                        print(f"  ⚠️  RETURNING ENTIRE JOB TO QUEUE")
+                        return all_unique_profiles, "filter_failed"
+                elif page_load_result == False:
+                    print(f"  ⚠️  Page failed to load on attempt {position_attempt + 1}")
+                    if position_attempt < max_position_retries - 1:
+                        print(f"  🔄 Will retry this position...")
+                        continue
+                    else:
+                        print(f"  ❌ Position '{position}' failed after {max_position_retries} attempts")
+                        print(f"  ⚠️  RETURNING ENTIRE JOB TO QUEUE")
+                        return all_unique_profiles, "filter_failed"
+
+                # Verify position filter is in URL
+                current_url = await page.evaluate('window.location.href')
+                if 'titleFreeText=' not in current_url and '&title=' not in current_url:
+                    print(f"  ⚠️  Position filter not in URL on attempt {position_attempt + 1}")
+                    if position_attempt < max_position_retries - 1:
+                        print(f"  🔄 Will retry this position...")
+                        continue
+                    else:
+                        print(f"  ❌ Position '{position}' failed after {max_position_retries} attempts")
+                        print(f"  ⚠️  RETURNING ENTIRE JOB TO QUEUE")
+                        return all_unique_profiles, "filter_failed"
+
+                print(f"  ✅ Successfully loaded page with position filter")
+                position_success = True
+                break
+
+            except Exception as e:
+                print(f"  ❌ Error navigating to position URL on attempt {position_attempt + 1}: {e}")
                 if position_attempt < max_position_retries - 1:
                     print(f"  🔄 Will retry this position...")
                     continue
@@ -699,9 +742,6 @@ async def collect_unique_profiles_across_positions(page, search_string, position
                     print(f"  ❌ Position '{position}' failed after {max_position_retries} attempts")
                     print(f"  ⚠️  RETURNING ENTIRE JOB TO QUEUE")
                     return all_unique_profiles, "filter_failed"
-            else:
-                position_success = True
-                break
 
         if not position_success:
             print(f"  ❌ Position '{position}' failed - RETURNING TO QUEUE")
