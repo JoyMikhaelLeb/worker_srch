@@ -315,29 +315,22 @@ async def apply_position_filter(page, position, max_retries=3):
             all_filters_clicked = False
 
             try:
-                # Try to find and click the All filters button
-                all_filters_btn = await page.find("button:has(span:text('All filters'))", timeout=8)
-                if all_filters_btn:
-                    await all_filters_btn.click()
-                    all_filters_clicked = True
+                # Use JS to find and click All filters button
+                all_filters_clicked = await page.evaluate("""
+                    () => {
+                        const btn = Array.from(document.querySelectorAll('button'))
+                            .find(el => el.textContent.includes('All filters'));
+                        if (btn) {
+                            btn.click();
+                            return true;
+                        }
+                        return false;
+                    }
+                """)
+                if all_filters_clicked:
+                    await asyncio.sleep(0.8)
             except:
-                try:
-                    all_filters_btn = await page.find("button[aria-label*='Show all filters']", timeout=8)
-                    if all_filters_btn:
-                        await all_filters_btn.click()
-                        all_filters_clicked = True
-                except:
-                    try:
-                        # JS fallback
-                        await page.evaluate("""
-                            const btn = Array.from(document.querySelectorAll('button'))
-                                .find(el => el.textContent.includes('All filters'));
-                            if (btn) btn.click();
-                        """)
-                        await asyncio.sleep(0.5)
-                        all_filters_clicked = True
-                    except:
-                        pass
+                pass
 
             if not all_filters_clicked:
                 print(f"  ⚠️  Could not find 'All filters' button on attempt {retry_attempt + 1}")
@@ -347,111 +340,96 @@ async def apply_position_filter(page, position, max_retries=3):
                     return "filter_failed"
 
             print("✅ Clicked All filters")
-            await asyncio.sleep(0.8)
 
-            # Wait for filter panel
-            try:
-                aside = await page.find("aside", timeout=5)
-                if not aside:
-                    raise Exception("Aside not found")
-            except:
-                print(f"  ⚠️  Filter panel not found on attempt {retry_attempt + 1}")
-                if retry_attempt < max_retries - 1:
-                    continue
-                else:
-                    return "filter_failed"
+            # Wait for filter panel to appear
+            await asyncio.sleep(1.5)
 
-            # Find Title input
-            title_input = None
+            # Scroll modal to make Title field visible
+            await page.evaluate("""
+                () => {
+                    const modal = document.querySelector('div[class*="artdeco-modal__content"]');
+                    if (modal) {
+                        modal.scrollTop = modal.scrollHeight;
+                    }
+                }
+            """)
+            await asyncio.sleep(0.5)
 
-            try:
-                # Method 1: Direct CSS selector
-                title_input = await page.find("input[data-view-name='search-filter-all-filters-keyword']", timeout=5)
-                if title_input:
-                    # Verify it's the title input by checking parent context
-                    parent_text = await page.evaluate("""
-                        (input) => {
-                            const parent = input.closest('div');
-                            return parent ? parent.textContent : '';
-                        }
-                    """, title_input)
-                    if 'Title' not in parent_text:
-                        title_input = None
-            except:
-                pass
+            # Find and fill the Title input using JavaScript
+            title_filled = await page.evaluate("""
+                (position) => {
+                    // Find all input fields with the keyword data attribute
+                    const inputs = document.querySelectorAll('input[data-view-name="search-filter-all-filters-keyword"]');
 
-            if not title_input:
-                try:
-                    # Method 2: Find by scrolling modal and using JS
-                    all_filters_modal = await page.find("div[class*='artdeco-modal__content']", timeout=5)
-                    if all_filters_modal:
-                        await page.evaluate("(modal) => modal.scrollTop = modal.scrollHeight", all_filters_modal)
-                        await asyncio.sleep(0.5)
+                    // Look for the one with "Title" label
+                    for (let input of inputs) {
+                        // Get parent container
+                        const container = input.closest('div');
+                        if (!container) continue;
 
-                        title_input = await page.evaluate("""
-                            () => {
-                                const inputs = document.querySelectorAll('input[data-view-name="search-filter-all-filters-keyword"]');
+                        // Look for label with "Title" text
+                        const labels = container.querySelectorAll('label, div');
+                        for (let label of labels) {
+                            if (label.textContent.trim() === 'Title') {
+                                // Found it! Scroll into view and fill
+                                input.scrollIntoView({block: 'center'});
+                                input.value = '';
+                                input.focus();
+                                input.value = position;
 
-                                for (let input of inputs) {
-                                    const parent = input.closest('div[class*="aae541d0"]');
-                                    if (!parent) continue;
+                                // Trigger input event
+                                const event = new Event('input', { bubbles: true });
+                                input.dispatchEvent(event);
 
-                                    const label = parent.querySelector('label div');
-                                    if (label && label.textContent.trim() === 'Title') {
-                                        input.scrollIntoView({block: 'center'});
-                                        return input;
-                                    }
-                                }
-                                return inputs[2];
+                                return true;
                             }
-                        """)
-                except:
-                    pass
+                        }
+                    }
+                    return false;
+                }
+            """, position)
 
-            if not title_input:
+            if not title_filled:
                 print(f"  ⚠️  Title input field not found on attempt {retry_attempt + 1}")
                 if retry_attempt < max_retries - 1:
-                    try:
-                        await page.evaluate("""
+                    await page.evaluate("""
+                        () => {
                             const closeBtn = document.querySelector('button[aria-label*="Dismiss"]');
                             if (closeBtn) closeBtn.click();
-                        """)
-                        await asyncio.sleep(0.5)
-                    except:
-                        pass
+                        }
+                    """)
+                    await asyncio.sleep(0.5)
                     continue
                 else:
                     return "filter_failed"
 
-            # Type into Title input
-            try:
-                await title_input.clear_input()
-                await asyncio.sleep(0.15)
-                await title_input.send_keys(position)
-                print(f"✅ Entered position: {position}")
-            except Exception as e:
-                print(f"  ⚠️  Could not type position on attempt {retry_attempt + 1}: {e}")
+            print(f"✅ Entered position: {position}")
+            await asyncio.sleep(0.5)
+
+            # Click Show results button using JavaScript
+            show_results_clicked = await page.evaluate("""
+                () => {
+                    const buttons = document.querySelectorAll('button');
+                    for (let btn of buttons) {
+                        if (btn.textContent.includes('Show results')) {
+                            btn.scrollIntoView({block: 'center'});
+                            btn.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+            """)
+
+            if not show_results_clicked:
+                print(f"  ⚠️  Could not click 'Show results' on attempt {retry_attempt + 1}")
                 if retry_attempt < max_retries - 1:
                     continue
                 else:
                     return "filter_failed"
 
-            # Click Show results
-            try:
-                show_results_btn = await page.find("button:has(span:text('Show results'))", timeout=5)
-                if show_results_btn:
-                    await show_results_btn.scroll_into_view()
-                    await asyncio.sleep(0.3)
-                    await show_results_btn.click()
-                    print("✅ Clicked Show results")
-                else:
-                    raise Exception("Show results button not found")
-            except Exception as e:
-                print(f"  ⚠️  Could not click 'Show results' on attempt {retry_attempt + 1}: {e}")
-                if retry_attempt < max_retries - 1:
-                    continue
-                else:
-                    return "filter_failed"
+            print("✅ Clicked Show results")
+            await asyncio.sleep(1)
 
             # Wait for results
             page_load_result = await wait_for_page_load(page)
