@@ -1,12 +1,12 @@
-firebase_admin==5.0.2
-numpy==1.18.5
+firebase_admin==6.5.0
+numpy>=1.26.0
 nodriver==0.37
-protobuf==3.19.1
-beautifulsoup4==4.9.3
-pandas==1.2.2
+protobuf>=4.21.0
+beautifulsoup4==4.12.3
+pandas>=2.0.0
 pyperclip==1.8.2
-scrapy==2.4.1
-google-cloud-pubsub==2.5.0
-google-cloud-firestore==2.1.0
-emoji ==1.7.0
-supabase == 2.6.0
+scrapy==2.11.0
+google-cloud-pubsub==2.18.0
+google-cloud-firestore==2.14.0
+emoji==2.10.0
+supabase==2.6.0
