@@ -3,27 +3,20 @@
 Created on Tue Oct 26 12:53:16 2021
 
 @author: charb
-"""
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.common.exceptions import NoSuchElementException,TimeoutException
 
+SIMPLIFIED VERSION - Removed selenium, only keeping nodriver and essential functions
+"""
 import random
-from selenium import webdriver
 import time
 from random import randint
 import firebase_admin
 from firebase_admin import credentials, firestore
 import datetime
 from google.cloud.firestore_v1 import Increment
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
-from selenium.common.exceptions import NoSuchElementException
-from selenium.common.exceptions import WebDriverException
-from webdriver_manager.chrome import ChromeDriverManager
 import os
 import re
 import emoji
 from datetime import datetime,date
-from selenium.webdriver.common.by import By
 import asyncio
 import nodriver as uc
 
@@ -313,6 +306,176 @@ def linkedin_login_nodriver_sync(username, password, headless=False):
     return loop.run_until_complete(
         linkedin_login_nodriver(username, password, headless)
     )
+
+
+async def get_numericalID_async(page, db, pageID):
+    """
+    Async nodriver version of get_numericalID
+
+    Simplified version that gets numerical LinkedIn company ID
+    """
+    # Clean the pageID
+    if '/about' in pageID:
+        pageID = pageID.replace("/about", "")
+    if '/' in pageID:
+        pageID = pageID.rstrip("/")
+    if '/mycompany' in pageID:
+        pageID = pageID.replace("/mycompany", "")
+    if '/admin' in pageID:
+        pageID = pageID.replace("/admin", "")
+    if '?originalSubdomain' in pageID:
+        pageID = pageID.split('?originalSubdomain')[0]
+
+    # Check Firestore first for existing numerical ID
+    docu_ref = db.collection(u'entities').document(pageID)
+    doc = docu_ref.get()
+
+    if doc.exists:
+        doc_out = doc.to_dict()
+        try:
+            numericLink = doc_out['about']['numericLink']
+            if numericLink != "":
+                if '%' in numericLink:
+                    numericLink = numericLink.split("%")[0]
+                try:
+                    target_numerical = numericLink.split("https://www.linkedin.com/company/")[1]
+                except:
+                    target_numerical = numericLink.split("http://www.linkedin.com/company/")[1]
+                return target_numerical
+        except KeyError:
+            pass
+
+    # Navigate to LinkedIn page
+    target_link = "https://www.linkedin.com/company/" + pageID + '/'
+
+    try:
+        await page.get(target_link)
+        await asyncio.sleep(random.uniform(3, 6))
+    except:
+        print("Error navigating to company page, retrying...")
+        await asyncio.sleep(2)
+        await page.get(target_link)
+        await asyncio.sleep(random.uniform(3, 6))
+
+    # Get current URL
+    current_target = await page.evaluate('window.location.href')
+
+    # Clean current URL
+    if '/about' in current_target:
+        current_target = current_target.replace("/about", "")
+    if '/' in current_target:
+        current_target = current_target.rstrip("/")
+    if '/mycompany' in current_target:
+        current_target = current_target.replace("/mycompany", "")
+    if '/admin' in current_target:
+        current_target = current_target.replace("/admin", "")
+    if '?originalSubdomain' in current_target:
+        current_target = current_target.split('?originalSubdomain')[0]
+
+    # Check for error pages
+    if current_target == "https://www.linkedin.com/404/":
+        return "Page_doesnt_exist"
+    if any(substring in current_target for substring in ["/checkpoint/challenge", "login?session_redirect", "authwall?trk"]):
+        return "security_check"
+
+    # Try to extract numerical ID from page
+    try:
+        # Click on employee count element to reveal numerical ID
+        employee_elem = await page.find("span.t-normal.t-black--light", timeout=5)
+        if employee_elem:
+            await employee_elem.click()
+            await asyncio.sleep(random.uniform(2, 4))
+
+            current = await page.evaluate('window.location.href')
+            print(f"Current URL after click: {current}")
+
+            # Extract numerical ID from URL
+            numerical = None
+            if "%5B%22" in current and "%22%5D" in current:
+                numerical = current.split("%5B%22")[1].split("%22%5D")[0]
+            elif "%5B" in current and "%5D" in current:
+                numerical = current.split("%5B")[1].split("%5D")[0]
+            elif "/company/" in current:
+                parts = current.split("/company/")[1].rstrip('/')
+                if parts and parts != pageID:
+                    numerical = parts
+
+            if numerical:
+                # Clean the numerical ID
+                if '%22' in numerical:
+                    numerical = numerical.split("%22")[0]
+                if '%' in numerical:
+                    numerical = numerical.split("%")[0]
+
+                # Save to Firestore
+                about_data = {
+                    'about': {
+                        'updated_Link': f'https://www.linkedin.com/company/{pageID}/',
+                        'numericLink': f'https://www.linkedin.com/company/{numerical}',
+                        'date_collected': date.today().strftime("%d-%b-%y")
+                    },
+                    'id': pageID,
+                    'parallel_number': randint(1, 10)
+                }
+                update_firestore_with_conditional_created(db, 'entities', pageID, about_data)
+                print(f"***Updated with numerical ID: {numerical}***")
+                return numerical
+    except Exception as e:
+        print(f"Error extracting numerical ID: {e}")
+
+    return 0
+
+
+def get_numericalID(driver, db, pageID):
+    """
+    Synchronous wrapper for get_numericalID_async (for backward compatibility)
+    """
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    return loop.run_until_complete(get_numericalID_async(driver, db, pageID))
+
+
+async def getLink_async(page, link):
+    """
+    Async nodriver version of getLink
+
+    Checks if a LinkedIn company page is available
+    """
+    search_link = "https://www.linkedin.com/company/" + link
+
+    try:
+        await page.get(search_link)
+        await asyncio.sleep(random.uniform(3, 6))
+    except:
+        print("Error navigating, retrying...")
+        await page.reload()
+        await asyncio.sleep(random.uniform(3, 6))
+        await page.get(search_link)
+        await asyncio.sleep(random.uniform(3, 6))
+
+    current_link = await page.evaluate('window.location.href')
+
+    if 'company/unavailable' in current_link or '/about/' in current_link:
+        return "unavailable"
+    else:
+        return "no problem"
+
+
+def getLink(driver, link):
+    """
+    Synchronous wrapper for getLink_async (for backward compatibility)
+    """
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    return loop.run_until_complete(getLink_async(driver, link))
 
 
 def getNumberOfEmployees(driver):
