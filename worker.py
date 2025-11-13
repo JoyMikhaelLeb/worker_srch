@@ -4,35 +4,22 @@
 Created on Sat Mar 12 16:46:48 2022
 
 @author: charb,Joy
+
+SIMPLIFIED VERSION - Only processes search_people tasks using nodriver
 """
 import re
-from save_website import extract_domain
 from time import sleep, time
 import signal
-from getnumericals import getNumerical
-# from supabase_founding_dates_interface import connect_to_supabase
-from supabase_founding_dates_interface import update_person,replace_linkedin_handle,update_oldest_founder_founding_if_older_add_about,Raw_Entity
 
-from abouts import getAbouts
-from ppl_info_old  import getppl
-
+# Only import modules that exist in the directory
 from search_ppl import search_position
-from advanced_search_ppl import sales_search
-from advanced_search_ppl import get_advanced_search_people_profile
-from advanced_search_companies import sales_company_search
-from advanced_search_companies import get_advanced_search_company_profile
-from downloadhtml import get_profile_sales_html
-#adv is based on the one will import now
-from advanced_profiles_html import advanced_search_people_profile_html
-from insights import get_25_months_employees
-from utils import linkedin_login, linkedin_login_nodriver_sync, getVerificationCode,linkedin_logout, getPass, get_numericalID, get_name_and_numericalID,getLink
+from utils import linkedin_login_nodriver_sync, getVerificationCode, getPass, get_numericalID, getLink
 import logging
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
 
 import os
-from sn_employees_movements import get_sn_employees_movements
 import datetime
 from datetime import date
 from datetime import datetime as datetime_class
@@ -41,7 +28,6 @@ import traceback
 import json
 
 from random import randint
-# Removed selenium imports - now using nodriver
 from urllib3.connectionpool import log as urllibLogger
 urllibLogger.setLevel(logging.FATAL)
 
@@ -3093,23 +3079,19 @@ class Worker:
             return status
 
     def __process_task(self, task):
+        # SIMPLIFIED: Only handle search_people and command tasks
         defined_categories = {
-            "about": self.__process_about,
             "command": self.__process_command,
-            "ppl": self.__process_ppl,
             "search_people": self.__process_search_ppl,
-            "search_people_advanced": self.__process_advanced_search_ppl,
-            "25_months_employees": self.__process_25_months_employees,
-            "get_profile_search_people_advanced": self.__process_new_profile_search_ppl_advanced,
-            "check_html": self.__check_html,
-            "search_companies_advanced":self.__process_advanced_search_company,
-            "get_profile_search_company_advanced": self.__process_profile_search_companyl_advanced,
-            "sn_ppl":self.__process_profile_sales_html,
-            "sn_employees_movements":self.__process_sn_employees_movements,
-            "numerical_about":self.__process_numerical_about,
         }
 
         status = False
+
+        # Check if this is a supported task category
+        if task["category"] not in defined_categories:
+            self.logger.error(f"Unsupported task category: {task['category']}")
+            self.logger.error("This worker only supports: search_people, login, logout")
+            return False
 
         try:
             if task["category"] != "command":
@@ -3117,29 +3099,27 @@ class Worker:
                     current_request=task["request_id"],
                     current_task=self.current_task_id,
                 )
-            t1 = time()    
+            t1 = time()
             status = defined_categories[task["category"]](task)
-            if status == False and task["category"] != "check_html" :
+
+            if status == False:
                 print("Task execution failed with False")
                 raise Exception("Task failed")
-            elif status == False and task["category"] == "check_html":
-                t2 = time()
-                print("Task executed in ", t2-t1," seconds")
-                status = True
-                
+
             elif status == "NEEDS_VALIDATION":
                 print("Task interrupted. Worker needs Validation!!")
-            
+
             else:
                 t2 = time()
                 print("Task executed in ", t2-t1," seconds")
-            
+
             return status
-        
+
         except KeyError:
             self.logger.error(
-                f"Task category \"{task['category']}\" is not defined yet."
+                f"Task category \"{task['category']}\" is not supported."
             )
+            self.logger.error("Supported categories: search_people, login, logout")
             status = False
             raise
 
