@@ -229,94 +229,59 @@ async def smart_wait_for_element(page, selector, timeout=8):
 
 
 async def wait_for_page_load(page, max_wait=20):
-    """Wait for page to fully load with retry logic - UPDATED for multiple HTML variations"""
+    """Wait for page to fully load - SIMPLIFIED VERSION with longer wait"""
     print("⏳ Waiting for page to load...")
 
-    for attempt in range(2):
+    # LinkedIn uses heavy JavaScript - give it time to render (5-10 seconds)
+    await asyncio.sleep(7)
+
+    # Check if page has any content
+    for attempt in range(3):
         try:
-            # Wait for the page to be fully loaded
-            result = await page.evaluate("""
-                new Promise((resolve) => {
-                    const checkInterval = setInterval(() => {
-                        if (document.readyState === 'complete') {
-                            // Check for various search result containers
+            # Simple check: look for any result items or the results list
+            has_content = await page.evaluate("""
+                () => {
+                    // Check for result list
+                    const resultsList = document.querySelector('ul.reusable-search__entity-result-list');
+                    if (resultsList) return true;
 
-                            const searchMarvel = document.querySelector('.search-marvel-srp');
-                            if (searchMarvel) {
-                                const resultsContainer = document.querySelector('.search-results-container');
-                                if (resultsContainer) {
-                                    clearInterval(checkInterval);
-                                    resolve(true);
-                                    return;
-                                }
-                            }
+                    // Check for any result items
+                    const items = document.querySelectorAll('li.reusable-search__result-container');
+                    if (items.length > 0) return true;
 
-                            const searchScreen = document.querySelector('[data-sdui-screen*="SearchResultsPeople"]');
-                            if (searchScreen) {
-                                clearInterval(checkInterval);
-                                resolve(true);
-                                return;
-                            }
+                    // Check for "No results found" message
+                    const headings = document.querySelectorAll('h2');
+                    for (let h of headings) {
+                        if (h.textContent.includes('No results found')) return true;
+                    }
 
-                            const searchResults = document.querySelector('[data-view-name="people-search-result"]');
-                            if (searchResults) {
-                                clearInterval(checkInterval);
-                                resolve(true);
-                                return;
-                            }
+                    // Check for any search results container
+                    const searchResults = document.querySelector('[data-view-name="search-results-container"]');
+                    if (searchResults) return true;
 
-                            const resultsList = document.querySelector('[data-view-name="search-results-banner"]');
-                            if (resultsList) {
-                                clearInterval(checkInterval);
-                                resolve(true);
-                                return;
-                            }
+                    // Check for people search results
+                    const peopleResults = document.querySelector('[data-view-name="people-search-result"]');
+                    if (peopleResults) return true;
 
-                            const resultItems = document.querySelectorAll('li[class*="reusable-search__result-container"]');
-                            if (resultItems.length > 0) {
-                                clearInterval(checkInterval);
-                                resolve(true);
-                                return;
-                            }
-
-                            const genericResults = document.querySelector('ul[role="list"]');
-                            if (genericResults && genericResults.querySelector('li')) {
-                                clearInterval(checkInterval);
-                                resolve(true);
-                                return;
-                            }
-                        }
-                    }, 500);
-
-                    setTimeout(() => {
-                        clearInterval(checkInterval);
-                        resolve(false);
-                    }, """ + str(max_wait * 1000) + """);
-                });
+                    return false;
+                }
             """)
 
-            if result:
+            if has_content:
                 print("✅ Page loaded successfully")
                 return True
-            else:
-                print(f"⚠️ Page load timeout (attempt {attempt + 1}/2)")
-                if attempt < 1:
-                    print("🔄 Refreshing page...")
-                    await page.reload()
-                    await asyncio.sleep(3)
-                else:
-                    return "no_results_container"
-        except Exception as e:
-            print(f"⚠️ Page load error (attempt {attempt + 1}/2): {e}")
-            if attempt < 1:
-                print("🔄 Refreshing page...")
-                await page.reload()
-                await asyncio.sleep(3)
-            else:
-                return False
 
-    print("❌ Failed to load page after 2 attempts")
-    return False
+            # Wait a bit more and retry
+            print(f"  ⏳ Content not fully loaded yet, waiting... (attempt {attempt + 1}/3)")
+            await asyncio.sleep(3)
+
+        except Exception as e:
+            print(f"  ⚠️ Error checking page load: {e}")
+            await asyncio.sleep(3)
+
+    # After all attempts, assume page is loaded and continue
+    print("  ✅ Proceeding after wait period")
+    return True
 
 # ============================================================================
 # FILTER APPLICATION (UI FALLBACK METHOD)
@@ -707,11 +672,7 @@ async def collect_unique_profiles_across_positions(page, search_string, position
             try:
                 await page.get(position_url)
 
-                # Progressive wait (FASTER)
-                position_wait = 1.5 + (idx * 0.2)
-                await asyncio.sleep(position_wait)
-
-                # Wait for page to load
+                # Wait for page to load (includes 7 second initial wait)
                 page_load_result = await wait_for_page_load(page)
 
                 if page_load_result == "no_results_container":
