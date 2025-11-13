@@ -24,6 +24,8 @@ import re
 import emoji
 from datetime import datetime,date
 from selenium.webdriver.common.by import By
+import asyncio
+import nodriver as uc
 
 
     
@@ -171,6 +173,146 @@ def linkedin_login(username, password, headless=False):
                 return None
         
     return driver
+
+
+async def linkedin_login_nodriver(username, password, headless=False):
+    """
+    Login to LinkedIn using nodriver (async)
+
+    Parameters:
+        username (str): LinkedIn email/username
+        password (str): LinkedIn password
+        headless (bool): Whether to run in headless mode
+
+    Returns:
+        page: nodriver Page object (browser tab)
+    """
+    url = "https://www.linkedin.com/login"
+
+    # Configure browser options
+    browser_args = []
+
+    if headless:
+        browser_args.append('--headless=new')
+        browser_args.append('--disable-gpu')
+
+    browser_args.extend([
+        '--window-size=1920,1080',
+        '--no-sandbox',
+        '--disable-dev-shm-usage',
+        '--start-maximized',
+        '--disable-blink-features=AutomationControlled',
+    ])
+
+    try:
+        # Start nodriver browser
+        browser = await uc.start(
+            headless=headless,
+            browser_args=browser_args
+        )
+
+        # Get the main page (tab)
+        page = await browser.get(url)
+
+        if headless:
+            print("Browser ready in headless mode (nodriver)")
+
+        # Wait for page to load
+        await asyncio.sleep(2)
+
+        # Fill in username
+        username_field = await page.find("#username", timeout=10)
+        if username_field:
+            await username_field.send_keys(username)
+
+        # Fill in password
+        password_field = await page.find("#password", timeout=10)
+        if password_field:
+            await password_field.send_keys(password)
+
+        # Try to uncheck "Remember me"
+        try:
+            remember_me_label = await page.find("label[for='rememberMeOptIn-checkbox']", timeout=2)
+            if remember_me_label:
+                await remember_me_label.click()
+                print("unchecked-rememberme")
+        except:
+            pass
+
+        # Click sign in button
+        sign_in_btn = await page.find("div.login__form_action_container button[aria-label*='Sign in']", timeout=10)
+        if not sign_in_btn:
+            sign_in_btn = await page.find("button[type='submit']", timeout=10)
+
+        if sign_in_btn:
+            await sign_in_btn.click()
+            await asyncio.sleep(2 + randint(1, 3))
+
+        # Check current URL
+        current_url = await page.evaluate('window.location.href')
+
+        if 'linkedin.com/checkpoint/challenge/' in current_url:
+            # Check for "Agree to comply" button
+            agree_buttons = await page.select_all("button:text('Agree to comply')")
+
+            if agree_buttons and len(agree_buttons) > 0:
+                print("Element found! Clicking it...")
+                await agree_buttons[0].click()
+                await asyncio.sleep(2 + randint(1, 3))
+            else:
+                print("Element not found. Skipping...")
+                print("Verification required. Waiting for code...")
+                verification_code = wait_for_verification_code(username)
+
+                if verification_code != "":
+                    try:
+                        verification_input = await page.find("#input__phone_verification_pin", timeout=10)
+                        if verification_input:
+                            await verification_input.send_keys(verification_code)
+                            await asyncio.sleep(1)
+
+                            submit_btn = await page.find("button[aria-label*='Submit']", timeout=10)
+                            if submit_btn:
+                                await submit_btn.click()
+                                print("Verification code submitted.")
+                                await asyncio.sleep(5)
+                    except Exception as e:
+                        print(f"Error entering verification code: {e}")
+                        await browser.stop()
+                        return None
+                else:
+                    print("No verification code received. Exiting.")
+                    await browser.stop()
+                    return None
+
+        return page
+
+    except Exception as e:
+        print(f"Error during nodriver login: {e}")
+        raise
+
+
+def linkedin_login_nodriver_sync(username, password, headless=False):
+    """
+    Synchronous wrapper for linkedin_login_nodriver
+
+    Parameters:
+        username (str): LinkedIn email/username
+        password (str): LinkedIn password
+        headless (bool): Whether to run in headless mode
+
+    Returns:
+        page: nodriver Page object (browser tab)
+    """
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    return loop.run_until_complete(
+        linkedin_login_nodriver(username, password, headless)
+    )
 
 
 def getNumberOfEmployees(driver):

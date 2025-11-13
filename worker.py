@@ -26,7 +26,7 @@ from downloadhtml import get_profile_sales_html
 #adv is based on the one will import now
 from advanced_profiles_html import advanced_search_people_profile_html
 from insights import get_25_months_employees
-from utils import linkedin_login, getVerificationCode,linkedin_logout, getPass, get_numericalID, get_name_and_numericalID,getLink
+from utils import linkedin_login, linkedin_login_nodriver_sync, getVerificationCode,linkedin_logout, getPass, get_numericalID, get_name_and_numericalID,getLink
 import logging
 import firebase_admin
 from firebase_admin import credentials
@@ -185,7 +185,8 @@ class Worker:
 
         self.logger.debug(f"Attempting log in of user {self.email}")
 
-        self.driver = linkedin_login(self.email, self.passwd, self.headless)
+        # Use nodriver instead of Selenium
+        self.driver = linkedin_login_nodriver_sync(self.email, self.passwd, self.headless)
 
         if self.__needs_validation_check():
             self.logger.critical(f"User {self.email} needs validation. Logging out.")
@@ -225,7 +226,25 @@ class Worker:
             return True
         try:
             self.logger.debug(f"Attempting log out of user {self.email}")
-            linkedin_logout(self.driver)
+            # For nodriver, we need to close the browser properly
+            import asyncio
+
+            async def close_browser():
+                try:
+                    if hasattr(self.driver, 'browser'):
+                        await self.driver.browser.stop()
+                    elif hasattr(self.driver, 'close'):
+                        await self.driver.close()
+                except:
+                    pass
+
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            loop.run_until_complete(close_browser())
         except:
             pass
 
@@ -268,10 +287,23 @@ class Worker:
 
         """
         try:
-            self.driver.find_element_by_xpath(
-                "//main[@class='app__content']//h1[text()[contains(.,'do a quick verification')]]"
-            )
-            return True
+            # For nodriver, use async operation
+            import asyncio
+
+            async def check_validation():
+                try:
+                    element = await self.driver.find("main.app__content h1:text('do a quick verification')", timeout=2)
+                    return element is not None
+                except:
+                    return False
+
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            return loop.run_until_complete(check_validation())
         except:
             return False
 
