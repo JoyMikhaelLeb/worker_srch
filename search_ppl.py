@@ -525,7 +525,8 @@ async def extract_profile_links_fast(page):
         }
     """)
 
-    return profile_links
+    # Ensure we always return a list, even if evaluate returns None
+    return profile_links or []
 
 async def collect_from_multiple_pages(page, max_tab):
     """Navigate through multiple pages - FASTER VERSION with nodriver"""
